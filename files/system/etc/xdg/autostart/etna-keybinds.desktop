@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Etna Keybinds
+Comment=Applica le scorciatoie di Etna-OS alla sessione (una sola volta per utente)
+Exec=etna-keybinds
+Terminal=false
+Icon=preferences-desktop-keyboard
+X-KDE-autostart-phase=2
+StartupNotify=false

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# etna-keybinds - Applica una sola volta le scorciatoie di Etna-OS alla
+# configurazione utente. Necessario perché /etc/skel viene copiato solo quando
+# l'utente viene creato: gli account esistenti prima del passaggio
+# all'immagine non riceverebbero mai le scorciatoie, e Plasma userebbe i suoi
+# default (Meta+W = Overview):
+# - Disattiva l'Overview di Plasma su Meta+W
+# - Meta+W -> Selettore Sfondi (etna-wallpaper)
+# - Meta+Spazio -> Rofi
+
+set -u
+
+MARKER="$HOME/.cache/etna-theme/keybinds-applied"
+
+[[ -f "$MARKER" ]] && exit 0
+
+command -v kwriteconfig6 &>/dev/null || exit 0
+
+# Disattiva l'Overview su Meta+W per lasciare il tasto al Selettore Sfondi
+kwriteconfig6 --file kglobalshortcutsrc --group kwin --key Overview "none,Meta+W,Toggle Overview"
+
+kwriteconfig6 --file kglobalshortcutsrc --group "etna-wallpaper.desktop" --key "_k_friendly_name" "Selettore Sfondi"
+kwriteconfig6 --file kglobalshortcutsrc --group "etna-wallpaper.desktop" --key "_launch" "Meta+W,none,Selettore Sfondi"
+
+kwriteconfig6 --file kglobalshortcutsrc --group "rofi.desktop" --key "_k_friendly_name" "Rofi"
+kwriteconfig6 --file kglobalshortcutsrc --group "rofi.desktop" --key "_launch" "Meta+Space,none,Rofi"
+
+# Ricarica il demone delle scorciatoie così le chiavi valgono subito,
+# senza dover fare logout/login
+systemctl --user try-restart plasma-kglobalaccel.service 2>/dev/null || true
+
+mkdir -p "$(dirname "$MARKER")"
+touch "$MARKER"
+exit 0
