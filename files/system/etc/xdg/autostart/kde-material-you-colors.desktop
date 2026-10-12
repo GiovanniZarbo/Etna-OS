@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=KDE Material You Colors
+Comment=Generazione automatica colori dinamici dallo sfondo
+Exec=kde-material-you-colors
+Terminal=false
+Icon=preferences-desktop-theme
+Categories=Utility;
+X-KDE-autostart-phase=2
+StartupNotify=false
+

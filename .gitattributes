@@ -1,0 +1,4 @@
+# Gli script bash non devono mai avere fine riga CRLF: non partirebbero su Linux
+*.sh text eol=lf
+files/system/usr/bin/* text eol=lf
+files/system/etc/profile.d/* text eol=lf

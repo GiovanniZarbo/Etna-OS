@@ -1,0 +1,10 @@
+[kwin]
+Overview=none,Meta+W,Toggle Overview
+
+[rofi.desktop]
+_k_friendly_name=Rofi
+_launch=Meta+Space,none,Rofi
+
+[etna-wallpaper.desktop]
+_k_friendly_name=Selettore Sfondi
+_launch=Meta+W,none,Selettore Sfondi

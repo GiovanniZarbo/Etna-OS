@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+# etna-wallpaper - Selettore sfondi grafico con Rofi per Etna-OS (KDE Plasma 6)
+# - Presenta una griglia degli sfondi disponibili (cartelle utente e di sistema,
+#   incluse le cartelle wallpaper KDE con struttura a pacchetto)
+# - Applica lo sfondo con l'animazione nativa di KDE Plasma
+# La palette colori (matugen), l'icona dell'Avviatore di applicazioni a tema e
+# lo schema Plasma (kde-material-you-colors) sono adattati centralmente da
+# etna-theme-watch, che reagisce al cambio di sfondo.
+
+set -o pipefail
+
+WALLPAPER_DIRS=(
+    "$HOME/Pictures/Wallpapers"
+    "$HOME/Pictures/wallpapers"
+    "$HOME/Pictures"
+    "$HOME/.local/share/wallpapers"
+    "/usr/share/wallpapers"
+    "/usr/share/backgrounds"
+)
+STATE_DIR="$HOME/.cache/etna-theme"
+STATE_FILE="$STATE_DIR/last-wallpaper"
+
+declare -a WALLPAPER_NAMES=()
+declare -a WALLPAPER_ICONS=()
+declare -a WALLPAPER_PATHS=()
+declare -A SEEN_PATHS=()
+
+add_wallpaper() {
+    local name="$1"
+    local icon="$2"
+    local target="$3"
+
+    if [[ -z "$target" || ! -f "$target" ]]; then
+        return
+    fi
+
+    local real_target
+    real_target="$(readlink -f "$target" 2>/dev/null || echo "$target")"
+
+    if [[ -n "${SEEN_PATHS[$real_target]}" ]]; then
+        return
+    fi
+    SEEN_PATHS["$real_target"]=1
+
+    WALLPAPER_NAMES+=("$name")
+    WALLPAPER_ICONS+=("$icon")
+    WALLPAPER_PATHS+=("$real_target")
+}
+
+# 1. Scansione delle cartelle sfondi
+for dir in "${WALLPAPER_DIRS[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+        continue
+    fi
+
+    for entry in "$dir"/*; do
+        if [[ -d "$entry" ]]; then
+            local_img=""
+            if [[ -d "$entry/contents/images" ]]; then
+                local_img="$(find "$entry/contents/images" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.webp" \) 2>/dev/null | sort -Vr | head -n 1)"
+            fi
+            if [[ -z "$local_img" && -f "$entry/contents/screenshot.png" ]]; then
+                local_img="$entry/contents/screenshot.png"
+            fi
+
+            if [[ -n "$local_img" && -f "$local_img" ]]; then
+                pkg_name="$(basename "$entry")"
+                add_wallpaper "$pkg_name" "$local_img" "$local_img"
+            fi
+        elif [[ -f "$entry" ]]; then
+            case "${entry,,}" in
+                *.jpg|*.jpeg|*.png|*.webp)
+                    file_name="$(basename "$entry")"
+                    clean_name="${file_name%.*}"
+                    add_wallpaper "$clean_name" "$entry" "$entry"
+                    ;;
+            esac
+        fi
+    done
+done
+
+if [[ ${#WALLPAPER_PATHS[@]} -eq 0 ]]; then
+    notify-send "Sfondi" "Nessuno sfondo trovato nelle cartelle supportate." -i preferences-desktop-wallpaper
+    exit 0
+fi
+
+# 2. Configura il tema Rofi
+THEME_FLAG=()
+if [[ -f "$HOME/.config/rofi/wallpaper.rasi" ]]; then
+    THEME_FLAG=(-theme "$HOME/.config/rofi/wallpaper.rasi")
+elif [[ -f "/etc/xdg/rofi/wallpaper.rasi" ]]; then
+    THEME_FLAG=(-theme "/etc/xdg/rofi/wallpaper.rasi")
+fi
+
+# 3. Presenta la griglia a Rofi
+SELECTION_INDEX=$(
+    for i in "${!WALLPAPER_NAMES[@]}"; do
+        printf "%s\0icon\x1f%s\n" "${WALLPAPER_NAMES[$i]}" "${WALLPAPER_ICONS[$i]}"
+    done | rofi -dmenu -i -format i -p "󰸉 Sfondi" "${THEME_FLAG[@]}"
+)
+
+# Se annullato con ESC
+if [[ -z "$SELECTION_INDEX" || "$SELECTION_INDEX" -lt 0 ]]; then
+    exit 0
+fi
+
+CHOSEN_NAME="${WALLPAPER_NAMES[$SELECTION_INDEX]}"
+CHOSEN_PATH="${WALLPAPER_PATHS[$SELECTION_INDEX]}"
+CHOSEN_ICON="${WALLPAPER_ICONS[$SELECTION_INDEX]}"
+
+# 4. Applica lo sfondo in KDE Plasma con il metodo e l'animazione nativa
+if command -v plasma-apply-wallpaperimage &>/dev/null; then
+    plasma-apply-wallpaperimage "$CHOSEN_PATH"
+else
+    qdbus_bin=""
+    for b in qdbus6 qdbus qdbus-qt6; do
+        command -v "$b" &>/dev/null && qdbus_bin="$b" && break
+    done
+    if [[ -n "$qdbus_bin" ]]; then
+        "$qdbus_bin" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+            var allDesktops = desktops();
+            for (var i = 0; i < allDesktops.length; i++) {
+                d = allDesktops[i];
+                d.wallpaperPlugin = 'org.kde.image';
+                d.currentConfigGroup = Array('Wallpaper', 'org.kde.image', 'General');
+                d.writeConfig('Image', 'file://${CHOSEN_PATH}');
+            }
+        " 2>/dev/null || true
+    fi
+fi
+
+# 5. Aggiorna lo stato condiviso: etna-theme-watch applicherà palette e icona
+# dell'Avviatore. Se il demone non è in esecuzione, genera almeno i colori qui.
+if ! pgrep -f "etna-theme-watch" &>/dev/null; then
+    if command -v matugen &>/dev/null; then
+        matugen image "$CHOSEN_PATH" &>/dev/null || true
+    fi
+fi
+mkdir -p "$STATE_DIR"
+echo "$CHOSEN_PATH" > "$STATE_FILE"
+
+# 6. Notifica visiva di conferma
+notify-send "Sfondo applicato" "$CHOSEN_NAME" -i "$CHOSEN_ICON" -t 3000
+
+exit 0

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+# etna-theme-watch - Demone centrale del theming di Etna-OS
+# Osserva lo sfondo del desktop Plasma e, a ogni cambio (da qualsiasi fonte:
+# selettore rofi, impostazioni KDE, menu del desktop), adatta il tema:
+# - rigenera la palette colori con matugen (kitty, GTK) dai colori dello sfondo
+# - aggiorna l'icona dell'Avviatore di applicazioni in base al tema dello sfondo
+#   (Lain -> start-menu-lain, Madoka -> start-menu-madoka)
+# Lo schema colori di Plasma è gestito in parallelo da kde-material-you-colors
+# (autostart dedicato), che reagisce nativamente ai cambi di sfondo.
+
+set -u
+
+POLL_INTERVAL=2
+APPLETRC="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+STATE_DIR="$HOME/.cache/etna-theme"
+STATE_FILE="$STATE_DIR/last-wallpaper"
+ICON_LAIN="/usr/share/pixmaps/start-menu-lain.png"
+ICON_MADOKA="/usr/share/pixmaps/start-menu-madoka.png"
+
+qdbus_bin() {
+    local b
+    for b in qdbus6 qdbus qdbus-qt6; do
+        if command -v "$b" &>/dev/null; then
+            echo "$b"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Mappa il percorso dello sfondo sull'icona dell'Avviatore a tema
+wallpaper_icon_for() {
+    case "${1,,}" in
+        *madoka*) echo "$ICON_MADOKA" ;;
+        *lain*)   echo "$ICON_LAIN" ;;
+        *)        echo "" ;;
+    esac
+}
+
+# Sfondo attuale: primo Image= impostato dal plugin wallpaper di Plasma
+current_wallpaper() {
+    [[ -f "$APPLETRC" ]] || return 1
+    local raw
+    raw="$(grep -m1 -oP '^Image=\K.*' "$APPLETRC" 2>/dev/null)" || return 1
+    [[ -n "$raw" ]] || return 1
+    echo "${raw#file://}"
+}
+
+set_kickoff_icon() {
+    local icon="$1" qdb
+    [[ -f "$icon" ]] || return 0
+    qdb="$(qdbus_bin)" || return 0
+    "$qdb" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+        var allPanels = panels();
+        for (var i = 0; i < allPanels.length; i++) {
+            var widgets = allPanels[i].widgets();
+            for (var j = 0; j < widgets.length; j++) {
+                if (widgets[j].type === 'org.kde.plasma.kickoff') {
+                    widgets[j].currentConfigGroup = ['General'];
+                    widgets[j].writeConfig('icon', '${icon}');
+                    widgets[j].reloadConfig();
+                }
+            }
+        }
+    " 2>/dev/null || true
+}
+
+apply_theme() {
+    local wallpaper="$1"
+    local icon
+    icon="$(wallpaper_icon_for "$wallpaper")"
+    if [[ -n "$icon" ]]; then
+        set_kickoff_icon "$icon"
+    fi
+    if command -v matugen &>/dev/null; then
+        matugen image "$wallpaper" &>/dev/null || true
+    fi
+    mkdir -p "$STATE_DIR"
+    echo "$wallpaper" > "$STATE_FILE"
+}
+
+# Attendi che la sessione Plasma sia attiva (massimo 30 secondi)
+WAITED=0
+QDB=""
+while (( WAITED < 30 )); do
+    QDB="$(qdbus_bin || true)"
+    if [[ -n "$QDB" ]] && "$QDB" org.kde.plasmashell /PlasmaShell &>/dev/null; then
+        break
+    fi
+    sleep 1
+    WAITED=$((WAITED + 1))
+done
+
+# Rilegge appletsrc solo quando cambia (mtime); deduplica tramite lo stato
+# condiviso, che anche etna-wallpaper aggiorna dopo aver applicato lo sfondo
+LAST_MTIME=""
+while true; do
+    if [[ -f "$APPLETRC" ]]; then
+        MTIME="$(stat -c %Y "$APPLETRC" 2>/dev/null || echo "")"
+        if [[ -n "$MTIME" && "$MTIME" != "$LAST_MTIME" ]]; then
+            LAST_MTIME="$MTIME"
+            WP="$(current_wallpaper || true)"
+            STATE_WP="$(cat "$STATE_FILE" 2>/dev/null || echo "")"
+            if [[ -n "$WP" && "$WP" != "$STATE_WP" ]]; then
+                apply_theme "$WP"
+            fi
+        fi
+    fi
+    sleep "$POLL_INTERVAL"
+done

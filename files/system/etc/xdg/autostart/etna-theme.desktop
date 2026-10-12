@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Etna Theme Watch
+Comment=Adatta palette colori e icona dell'avviatore allo sfondo del desktop
+Exec=etna-theme-watch
+Terminal=false
+Icon=preferences-desktop-theme
+Categories=Utility;
+X-KDE-autostart-phase=2
+StartupNotify=false

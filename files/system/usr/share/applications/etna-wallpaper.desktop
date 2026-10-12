@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Selettore Sfondi
+Comment=Seleziona lo sfondo del desktop, la palette colori segue automaticamente
+GenericName=Wallpaper Selector
+Exec=etna-wallpaper
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Type=Application
+Categories=Utility;Settings;
+StartupNotify=false
